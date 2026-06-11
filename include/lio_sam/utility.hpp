@@ -139,6 +139,8 @@ public:
     float surroundingKeyframeSearchRadius;
 
     // Loop closure
+    bool  publishTF;
+
     bool  loopClosureEnableFlag;
     float loopClosureFrequency;
     int   surroundingKeyframeSize;
@@ -285,6 +287,9 @@ public:
         get_parameter("surroundingKeyframeDensity", surroundingKeyframeDensity);
         declare_parameter("surroundingKeyframeSearchRadius", 50.0);
         get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
+
+        declare_parameter("publishTF", true);
+        get_parameter("publishTF", publishTF);
 
         declare_parameter("loopClosureEnableFlag", true);
         get_parameter("loopClosureEnableFlag", loopClosureEnableFlag);
