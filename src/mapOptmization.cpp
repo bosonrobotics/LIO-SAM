@@ -1639,7 +1639,7 @@ public:
         nav_msgs::msg::Odometry laserOdometryROS;
         laserOdometryROS.header.stamp = timeLaserInfoStamp;
         laserOdometryROS.header.frame_id = odometryFrame;
-        laserOdometryROS.child_frame_id = "odom_mapping";
+        laserOdometryROS.child_frame_id = "base_link";
         laserOdometryROS.pose.pose.position.x = transformTobeMapped[3];
         laserOdometryROS.pose.pose.position.y = transformTobeMapped[4];
         laserOdometryROS.pose.pose.position.z = transformTobeMapped[5];
@@ -1701,7 +1701,7 @@ public:
             }
             laserOdomIncremental.header.stamp = timeLaserInfoStamp;
             laserOdomIncremental.header.frame_id = odometryFrame;
-            laserOdomIncremental.child_frame_id = "odom_mapping";
+            laserOdomIncremental.child_frame_id = "base_link";
             laserOdomIncremental.pose.pose.position.x = x;
             laserOdomIncremental.pose.pose.position.y = y;
             laserOdomIncremental.pose.pose.position.z = z;
