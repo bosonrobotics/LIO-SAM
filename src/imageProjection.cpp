@@ -1,18 +1,26 @@
 #include "utility.hpp"
 #include "lio_sam/msg/cloud_info.hpp"
 
+#include <cstddef>
+
 struct VelodynePointXYZIRT
 {
     PCL_ADD_POINT4D
     PCL_ADD_INTENSITY;
     uint16_t ring;
-    float time;
+    // The LSLidar C32 driver publishes PointCloud2 field "time" as FLOAT64.
+    // Keep the input structure identical so PCL copies the field correctly.
+    double time;
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 } EIGEN_ALIGN16;
 POINT_CLOUD_REGISTER_POINT_STRUCT (VelodynePointXYZIRT,
     (float, x, x) (float, y, y) (float, z, z) (float, intensity, intensity)
-    (uint16_t, ring, ring) (float, time, time)
+    (uint16_t, ring, ring) (double, time, time)
 )
+// The C32 PointCloud2 contract is a 32-byte point with time at offset 24.
+// Refuse to build if a compiler/ABI layout change would corrupt deskew timing.
+static_assert(offsetof(VelodynePointXYZIRT, time) == 24);
+static_assert(sizeof(VelodynePointXYZIRT) == 32);
 
 struct OusterPointXYZIRT {
     PCL_ADD_POINT4D;

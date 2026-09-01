@@ -2,7 +2,7 @@
 
 This document covers tuning for LIO-SAM with:
 - **IMU:** ZED2i (BMI055 MEMS) at 400 Hz
-- **LiDAR:** Velodyne VLP-16 at 10 Hz
+- **LiDAR:** LSLidar C32 at 10 Hz
 - **GPS:** RTK (optional, currently disabled)
 
 ---
@@ -48,21 +48,27 @@ LIO-SAM hardcodes a fallback dt of `1/500 s`. At 100 Hz the actual dt is
 `0.0025 s`, which is much closer to the fallback and gives 40 IMU samples
 per LiDAR scan instead of 10.
 
-### Extrinsic calibration (verified from URDF)
+### Extrinsic calibration (top LiDAR mount)
 
-Derived from `boson_sim_v2/lx40_sim/urdf/lx40_sim.urdf.xacro`:
+The active vehicle TF captured on 2026-08-31 uses the top LiDAR mount:
 
 ```
-laser_link in base_link:        xyz = (3.2259116,  0,  0.4648076)  rpy = (0,0,0)
-zed2i_camera_link in base_link: xyz = (3.05333,    0,  0.965886)   rpy = (0,0,0)
+laser_link in base_link:        xyz = (2.65000,  0,  1.539000)
+zed2i_camera_link in base_link: xyz = (3.05333,  0,  0.965886)
 
-extrinsicTrans = camera_link - laser_link
-               = (-0.1726,  0.0,  0.5011)   ← matches current params exactly
-
-extrinsicRot   = identity                   ← both sensors mounted at rpy=(0,0,0)
+extrinsicTrans = camera reference - laser_link
+               = ( 0.40333,  0.0, -0.573114)
 ```
 
-Both `extrinsicTrans` and `extrinsicRot` are **correct**. No change needed.
+That value is configured in `lio_sam_params.yaml`. It replaces the obsolete
+`(-0.1726, 0, 0.5011)` value, which was derived for the old low LiDAR mount.
+
+`zed2i_imu_link` was not published in the captured TF tree, so the ZED
+factory camera-to-IMU correction is not currently available as TF. LIO-SAM
+uses `extrinsicRot`/`extrinsicRPY` to convert the IMU measurements, not an
+IMU-frame TF lookup. Keep the identity matrices only while the physical
+camera/IMU and LiDAR axes are aligned; use a measured calibration before
+changing them.
 
 ### IMU noise parameter changes
 
