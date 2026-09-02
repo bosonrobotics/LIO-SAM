@@ -221,8 +221,12 @@ public:
 
     int key = 1;
 
-    gtsam::Pose3 imu2Lidar = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
-    gtsam::Pose3 lidar2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+    // extRot/extTrans describe the full laser_link -> IMU transform. Using
+    // its inverse here keeps pose conversion consistent with imuConverter.
+    gtsam::Pose3 lidar2Imu = gtsam::Pose3(
+        gtsam::Rot3(extRot),
+        gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+    gtsam::Pose3 imu2Lidar = lidar2Imu.inverse();
 
     IMUPreintegration(const rclcpp::NodeOptions & options) :
             ParamServer("lio_sam_imu_preintegration", options)

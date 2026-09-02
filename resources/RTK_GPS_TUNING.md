@@ -50,25 +50,25 @@ per LiDAR scan instead of 10.
 
 ### Extrinsic calibration (top LiDAR mount)
 
-The active vehicle TF captured on 2026-08-31 uses the top LiDAR mount:
+The active vehicle TF captured on 2026-09-02 uses the top LiDAR mount:
 
 ```
-laser_link in base_link:        xyz = (2.65000,  0,  1.539000)
-zed2i_camera_link in base_link: xyz = (3.05333,  0,  0.965886)
+laser_link in base_link:             xyz = (2.650000,  0.000000,  1.539000)
+zed2i_left_camera_frame in base_link xyz = (3.043000,  0.060000,  0.981000)
+zed2i_imu_link in left-camera frame: xyz = (-0.002000, -0.023061, 0.000217)
 
-extrinsicTrans = camera reference - laser_link
-               = ( 0.40333,  0.0, -0.573114)
+extrinsicTrans (laser_link -> zed2i_imu_link)
+               = ( 0.391000,  0.036939, -0.557783)
 ```
 
 That value is configured in `lio_sam_params.yaml`. It replaces the obsolete
 `(-0.1726, 0, 0.5011)` value, which was derived for the old low LiDAR mount.
 
-`zed2i_imu_link` was not published in the captured TF tree, so the ZED
-factory camera-to-IMU correction is not currently available as TF. LIO-SAM
-uses `extrinsicRot`/`extrinsicRPY` to convert the IMU measurements, not an
-IMU-frame TF lookup. Keep the identity matrices only while the physical
-camera/IMU and LiDAR axes are aligned; use a measured calibration before
-changing them.
+The factory transform measured a small camera-to-IMU rotation. The matching
+non-identity `extrinsicRot` and `extrinsicRPY` matrices are configured in
+`lio_sam_params.yaml`: the first rotates IMU acceleration/gyro into the LiDAR
+frame and the second converts IMU orientation into the LiDAR frame. LIO-SAM
+uses these parameters, not a TF lookup, for its IMU conversion.
 
 ### IMU noise parameter changes
 
