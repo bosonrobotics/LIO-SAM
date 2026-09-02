@@ -221,8 +221,10 @@ public:
 
     int key = 1;
 
-    // extRot/extTrans describe the full laser_link -> IMU transform. Using
-    // its inverse here keeps pose conversion consistent with imuConverter.
+    // extRot/extTrans encode T_lidar_imu: the IMU pose expressed in
+    // laser_link (the TF lookup target is laser_link and source is the IMU).
+    // Invert it here because the preintegrator corrects an IMU pose into the
+    // LiDAR pose; this is consistent with imuConverter().
     gtsam::Pose3 lidar2Imu = gtsam::Pose3(
         gtsam::Rot3(extRot),
         gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
