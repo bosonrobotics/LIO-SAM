@@ -16,6 +16,9 @@
 
 #include <gtsam/nonlinear/ISAM2.h>
 
+#include <filesystem>
+#include <system_error>
+
 using namespace gtsam;
 
 using symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
@@ -179,17 +182,39 @@ public:
         auto saveMapService = [this](const std::shared_ptr<rmw_request_id_t> request_header, const std::shared_ptr<lio_sam::srv::SaveMap::Request> req, std::shared_ptr<lio_sam::srv::SaveMap::Response> res) -> void {
             (void)request_header;
             string saveMapDirectory;
-            cout << "****************************************************" << endl;
-            cout << "Saving map to pcd files ..." << endl;
             if(req->destination.empty()) saveMapDirectory = std::getenv("HOME") + savePCDDirectory;
             else saveMapDirectory = std::getenv("HOME") + req->destination;
-            cout << "Save destination: " << saveMapDirectory << endl;
-            // create directory and remove old files;
-            int unused = system((std::string("exec rm -r ") + saveMapDirectory).c_str());
-            unused = system((std::string("mkdir -p ") + saveMapDirectory).c_str());
+
+            RCLCPP_INFO(
+                get_logger(), "Map save started: destination=%s, keyframes=%zu, resolution=%.2f m",
+                saveMapDirectory.c_str(), cloudKeyPoses3D->size(), req->resolution);
+
+            // Use the filesystem API rather than shell commands. This avoids
+            // noisy errors for a new destination and rejects filesystem errors
+            // before PCL starts writing individual files.
+            std::error_code filesystem_error;
+            std::filesystem::remove_all(saveMapDirectory, filesystem_error);
+            if (filesystem_error)
+            {
+                RCLCPP_ERROR(
+                    get_logger(), "Map save failed: cannot clear destination '%s': %s",
+                    saveMapDirectory.c_str(), filesystem_error.message().c_str());
+                res->success = false;
+                return;
+            }
+            std::filesystem::create_directories(saveMapDirectory, filesystem_error);
+            if (filesystem_error)
+            {
+                RCLCPP_ERROR(
+                    get_logger(), "Map save failed: cannot create destination '%s': %s",
+                    saveMapDirectory.c_str(), filesystem_error.message().c_str());
+                res->success = false;
+                return;
+            }
+
             // save key frame transformations
-            pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory.pcd", *cloudKeyPoses3D);
-            pcl::io::savePCDFileBinary(saveMapDirectory + "/transformations.pcd", *cloudKeyPoses6D);
+            int save_result = pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory.pcd", *cloudKeyPoses3D);
+            save_result |= pcl::io::savePCDFileBinary(saveMapDirectory + "/transformations.pcd", *cloudKeyPoses6D);
             // extract global point cloud map
             pcl::PointCloud<PointType>::Ptr globalCornerCloud(new pcl::PointCloud<PointType>());
             pcl::PointCloud<PointType>::Ptr globalCornerCloudDS(new pcl::PointCloud<PointType>());
@@ -200,38 +225,38 @@ public:
             {
                 *globalCornerCloud += *transformPointCloud(cornerCloudKeyFrames[i],  &cloudKeyPoses6D->points[i]);
                 *globalSurfCloud   += *transformPointCloud(surfCloudKeyFrames[i],    &cloudKeyPoses6D->points[i]);
-                cout << "\r" << std::flush << "Processing feature cloud " << i << " of " << cloudKeyPoses6D->size() << " ...";
             }
             if(req->resolution != 0)
             {
-               cout << "\n\nSave resolution: " << req->resolution << endl;
                // down-sample and save corner cloud
                downSizeFilterCorner.setInputCloud(globalCornerCloud);
                downSizeFilterCorner.setLeafSize(req->resolution, req->resolution, req->resolution);
                downSizeFilterCorner.filter(*globalCornerCloudDS);
-               pcl::io::savePCDFileBinary(saveMapDirectory + "/CornerMap.pcd", *globalCornerCloudDS);
+               save_result |= pcl::io::savePCDFileBinary(saveMapDirectory + "/CornerMap.pcd", *globalCornerCloudDS);
                // down-sample and save surf cloud
                downSizeFilterSurf.setInputCloud(globalSurfCloud);
                downSizeFilterSurf.setLeafSize(req->resolution, req->resolution, req->resolution);
                downSizeFilterSurf.filter(*globalSurfCloudDS);
-               pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap.pcd", *globalSurfCloudDS);
+               save_result |= pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap.pcd", *globalSurfCloudDS);
             }
             else
             {
             // save corner cloud
-               pcl::io::savePCDFileBinary(saveMapDirectory + "/CornerMap.pcd", *globalCornerCloud);
+               save_result |= pcl::io::savePCDFileBinary(saveMapDirectory + "/CornerMap.pcd", *globalCornerCloud);
                // save surf cloud
-               pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap.pcd", *globalSurfCloud);
+               save_result |= pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap.pcd", *globalSurfCloud);
             }
             // save global point cloud map
             *globalMapCloud += *globalCornerCloud;
             *globalMapCloud += *globalSurfCloud;
-            int ret = pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap.pcd", *globalMapCloud);
-            res->success = ret == 0;
+            save_result |= pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap.pcd", *globalMapCloud);
+            res->success = save_result == 0;
             downSizeFilterCorner.setLeafSize(mappingCornerLeafSize, mappingCornerLeafSize, mappingCornerLeafSize);
             downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
-            cout << "****************************************************" << endl;
-            cout << "Saving map to pcd files completed\n" << endl;
+            if (res->success)
+                RCLCPP_INFO(get_logger(), "Map save complete: %s", saveMapDirectory.c_str());
+            else
+                RCLCPP_ERROR(get_logger(), "Map save failed while writing PCD files: %s", saveMapDirectory.c_str());
             return;
         };
         
