@@ -124,14 +124,14 @@ At real-time there is not.
 |---|---|---|---|---|
 | `loopClosureFrequency` | 1.0 | **1.0** | keep / revert if changed | Do not increase — more frequent closures = more frequent blocking |
 | `historyKeyframeSearchRadius` | 15.0 | **20.0** | applied | Wider outdoor loop closure search |
-| `surroundingkeyframeAddingDistThreshold` | 1.0 | **2.0** | pending | Keyframe every 2 m instead of 1 m — halves accumulation rate, `correctPoses()` stays fast |
-| `historyKeyframeSearchNum` | 25 | **15** | pending | Smaller ICP submap per closure detection — faster per-closure ICP |
+| `surroundingkeyframeAddingDistThreshold` | 1.0 | **2.0** | applied | Keyframe every 2 m instead of 1 m — halves accumulation rate, `correctPoses()` stays fast |
+| `historyKeyframeSearchNum` | 25 | **15** | applied | Smaller ICP submap per closure detection — faster per-closure ICP |
 
 ```yaml
 loopClosureFrequency:                    1.0   # do NOT increase
 historyKeyframeSearchRadius:             20.0
-surroundingkeyframeAddingDistThreshold:  2.0   # pending
-historyKeyframeSearchNum:                15    # pending
+surroundingkeyframeAddingDistThreshold:  2.0
+historyKeyframeSearchNum:                15
 ```
 
 ### Complete param status (all changes across this session)
@@ -144,8 +144,8 @@ historyKeyframeSearchNum:                15    # pending
 | `imuGyrBiasN` | 0.000022 | 0.0002 | — | Allow GTSAM to track bias drift |
 | `loopClosureFrequency` | 1.0 | 2.0 | revert to 1.0 | Frequent closures block main thread |
 | `historyKeyframeSearchRadius` | 15.0 | 20.0 | — | Wider outdoor search |
-| `surroundingkeyframeAddingDistThreshold` | 1.0 | 1.0 | **2.0** | Reduce keyframe accumulation rate |
-| `historyKeyframeSearchNum` | 25 | 25 | **15** | Smaller ICP submap |
+| `surroundingkeyframeAddingDistThreshold` | 1.0 | 2.0 | — | Reduce keyframe accumulation rate |
+| `historyKeyframeSearchNum` | 25 | 15 | — | Smaller ICP submap |
 
 ---
 
