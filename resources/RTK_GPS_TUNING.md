@@ -96,17 +96,22 @@ imuGyrBiasN: 0.0002
 
 ---
 
-## Loop Closure Tuning
+## Loop Closure Safety and Real-Time Tuning
 
-### Background: "Large velocity" after ~5 minutes at real-time
+### Background: "Large velocity" after extended real-time mapping
 
 The system runs fine at startup but triggers "Large velocity, reset IMU-preintegration!"
 after ~5 minutes. This is **not** a thermal or noise issue — confirmed by the fact that
 replaying the same bag at low rate works without errors.
 
-**Root cause: loop closure blocking the mapOptimization thread**
+Two failure paths must be prevented:
 
-When a loop closure fires, `mapOptimization` blocks on:
+1. A false ICP closure can add a discontinuous pose constraint. The optimizer
+   then reports an artificial high velocity and the IMU preintegration resets.
+2. Repeated full ISAM updates after a closure block map optimization while the
+   graph grows, delaying corrections delivered to IMU preintegration.
+
+When a loop closure fires, the original implementation blocks on:
 1. 6× `isam->update()` — cost scales with total keyframe count
 2. `correctPoses()` — iterates over every keyframe ever added (`mapOptmization.cpp:1597`)
 
@@ -117,6 +122,11 @@ correction → velocity diverges → reset.
 
 At low bag rate, there is enough wall-clock slack between scans to absorb the block.
 At real-time there is not.
+
+The vehicle profile now explicitly disables GPS factors (`useGPS: false`),
+rejects loop-closure current-pose jumps over 2 m or 0.35 rad, and uses no redundant
+post-closure ISAM updates. These safeguards preserve normal incremental ISAM2
+updates while rejecting the large discontinuities that make a map unusable.
 
 ### Parameter changes
 
@@ -132,6 +142,9 @@ loopClosureFrequency:                    1.0   # do NOT increase
 historyKeyframeSearchRadius:             20.0
 surroundingkeyframeAddingDistThreshold:  2.0
 historyKeyframeSearchNum:                15
+loopClosureMaxCorrectionDistance:        2.0
+loopClosureMaxCorrectionRotation:        0.35
+loopClosureExtraISAMUpdates:             0
 ```
 
 ### Complete param status (all changes across this session)

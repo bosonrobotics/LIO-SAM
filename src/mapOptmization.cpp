@@ -172,9 +172,15 @@ public:
         subCloud = create_subscription<lio_sam::msg::CloudInfo>(
             "lio_sam/feature/cloud_info", qos,
             std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
-        subGPS = create_subscription<nav_msgs::msg::Odometry>(
-            gpsTopic, 200,
-            std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
+        // Do not merely rely on an unused topic name to disable GPS.  A live
+        // publisher on that name can otherwise add global factors and alter
+        // the mapping graph.  Vehicle mapping is LiDAR/IMU-only by default.
+        if (useGPS)
+        {
+            subGPS = create_subscription<nav_msgs::msg::Odometry>(
+                gpsTopic, 200,
+                std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
+        }
         subLoop = create_subscription<std_msgs::msg::Float64MultiArray>(
             "lio_loop/loop_closure_detection", qos,
             std::bind(&mapOptimization::loopInfoHandler, this, std::placeholders::_1));
@@ -610,10 +616,31 @@ public:
         float x, y, z, roll, pitch, yaw;
         Eigen::Affine3f correctionLidarFrame;
         correctionLidarFrame = icp.getFinalTransformation();
+
         // transform from world origin to wrong pose
         Eigen::Affine3f tWrong = pclPointToAffine3f(copy_cloudKeyPoses6D->points[loopKeyCur]);
         // transform from world origin to corrected pose
         Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
+
+        // A distance candidate is already close in the current estimate.
+        // Gate the *actual current-pose displacement*, not the raw ICP
+        // translation, because rotation about the map origin also moves the
+        // pose.  This rejects a numerically converged but physically false
+        // loop closure before it can create a discontinuous IMU correction.
+        const float correctionDistance =
+            (tCorrect.translation() - tWrong.translation()).norm();
+        const float correctionRotation = Eigen::AngleAxisf(correctionLidarFrame.rotation()).angle();
+        if (correctionDistance > loopClosureMaxCorrectionDistance ||
+            correctionRotation > loopClosureMaxCorrectionRotation)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Rejecting loop closure: pose jump %.2f m, %.2f rad exceeds limits %.2f m, %.2f rad",
+                correctionDistance, correctionRotation,
+                loopClosureMaxCorrectionDistance, loopClosureMaxCorrectionRotation);
+            return;
+        }
+
         pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
         gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
         gtsam::Pose3 poseTo = pclPointTogtsamPose3(copy_cloudKeyPoses6D->points[loopKeyPre]);
@@ -1424,6 +1451,9 @@ public:
 
     void addGPSFactor()
     {
+        if (!useGPS)
+            return;
+
         if (gpsQueue.empty())
             return;
 
@@ -1542,13 +1572,13 @@ public:
         isam->update(gtSAMgraph, initialEstimate);
         isam->update();
 
+        // ISAM2 is incremental.  Re-running a full update five times after a
+        // loop closure blocks real-time scan corrections as the graph grows;
+        // any optional extra pass is bounded and explicitly configured.
         if (aLoopIsClosed == true)
         {
-            isam->update();
-            isam->update();
-            isam->update();
-            isam->update();
-            isam->update();
+            for (int i = 0; i < loopClosureExtraISAMUpdates; ++i)
+                isam->update();
         }
 
         gtSAMgraph.resize(0);

@@ -17,6 +17,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 
 #include <opencv2/opencv.hpp>
+#include <Eigen/Geometry>
 
 #include <pcl/kdtree/kdtree_flann.h>  // pcl include kdtree_flann throws error if PCL_NO_PRECOMPILE
                                       // is defined before
@@ -74,6 +75,7 @@ public:
     string imuTopic;
     string odomTopic;
     string gpsTopic;
+    bool useGPS;
 
     //Frames
     string lidarFrame;
@@ -148,6 +150,9 @@ public:
     float historyKeyframeSearchTimeDiff;
     int   historyKeyframeSearchNum;
     float historyKeyframeFitnessScore;
+    float loopClosureMaxCorrectionDistance;
+    float loopClosureMaxCorrectionRotation;
+    int   loopClosureExtraISAMUpdates;
 
     // global map visualization radius
     float globalMapVisualizationSearchRadius;
@@ -164,6 +169,8 @@ public:
         get_parameter("odomTopic", odomTopic);
         declare_parameter("gpsTopic", "lio_sam/odometry/gps");
         get_parameter("gpsTopic", gpsTopic);
+        declare_parameter("useGPS", false);
+        get_parameter("useGPS", useGPS);
 
         declare_parameter("lidarFrame", "laser_data_frame");
         get_parameter("lidarFrame", lidarFrame);
@@ -305,6 +312,12 @@ public:
         get_parameter("historyKeyframeSearchNum", historyKeyframeSearchNum);
         declare_parameter("historyKeyframeFitnessScore", 0.3);
         get_parameter("historyKeyframeFitnessScore", historyKeyframeFitnessScore);
+        declare_parameter("loopClosureMaxCorrectionDistance", 10.0);
+        get_parameter("loopClosureMaxCorrectionDistance", loopClosureMaxCorrectionDistance);
+        declare_parameter("loopClosureMaxCorrectionRotation", 0.35);
+        get_parameter("loopClosureMaxCorrectionRotation", loopClosureMaxCorrectionRotation);
+        declare_parameter("loopClosureExtraISAMUpdates", 0);
+        get_parameter("loopClosureExtraISAMUpdates", loopClosureExtraISAMUpdates);
 
         declare_parameter("globalMapVisualizationSearchRadius", 1000.0);
         get_parameter("globalMapVisualizationSearchRadius", globalMapVisualizationSearchRadius);
