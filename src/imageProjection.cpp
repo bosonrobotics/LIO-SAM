@@ -341,14 +341,15 @@ public:
             return false;
         }
 
-        imuDeskewInfo();
+        if (!imuDeskewInfo())
+            return false;
 
         odomDeskewInfo();
 
         return true;
     }
 
-    void imuDeskewInfo()
+    bool imuDeskewInfo()
     {
         cloudInfo.imu_available = false;
 
@@ -361,7 +362,7 @@ public:
         }
 
         if (imuQueue.empty())
-            return;
+            return false;
 
         imuPointerCur = 0;
 
@@ -391,6 +392,14 @@ public:
 
             // integrate rotation
             double timeDiff = currentImuTime - imuTime[imuPointerCur-1];
+            if (timeDiff <= 0.0 || timeDiff > imuMaxTimeGap)
+            {
+                RCLCPP_WARN_THROTTLE(
+                    get_logger(), *get_clock(), 5000,
+                    "Dropping scan: IMU timestamp gap %.3f s exceeds limit %.3f s",
+                    timeDiff, imuMaxTimeGap);
+                return false;
+            }
             imuRotX[imuPointerCur] = imuRotX[imuPointerCur-1] + angular_x * timeDiff;
             imuRotY[imuPointerCur] = imuRotY[imuPointerCur-1] + angular_y * timeDiff;
             imuRotZ[imuPointerCur] = imuRotZ[imuPointerCur-1] + angular_z * timeDiff;
@@ -401,9 +410,10 @@ public:
         --imuPointerCur;
 
         if (imuPointerCur <= 0)
-            return;
+            return false;
 
         cloudInfo.imu_available = true;
+        return true;
     }
 
     void odomDeskewInfo()

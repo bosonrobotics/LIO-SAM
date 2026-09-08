@@ -390,7 +390,11 @@ public:
         }
 
 
-        // 1. integrate imu data and optimize
+        // 1. integrate IMU data and optimize.  A correction spanning an
+        // unmeasured interval is unsafe: discard that correction and
+        // reinitialize at the next LiDAR correction instead of creating an
+        // IMU factor with a fabricated gap.
+        bool invalidImuInterval = false;
         while (!imuQueOpt.empty())
         {
             // pop and integrate imu data that is between two optimizations
@@ -398,16 +402,31 @@ public:
             double imuTime = stamp2Sec(thisImu->header.stamp);
             if (imuTime < currentCorrectionTime - delta_t)
             {
-                double dt = (lastImuT_opt < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_opt);
-                imuIntegratorOpt_->integrateMeasurement(
-                        gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
-                        gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
-                
+                double dt = (lastImuT_opt < 0) ? 0.0 : (imuTime - lastImuT_opt);
+                if (dt > 0.0 && dt <= imuMaxTimeGap)
+                {
+                    imuIntegratorOpt_->integrateMeasurement(
+                            gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
+                            gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
+                }
+                else if (lastImuT_opt >= 0)
+                {
+                    RCLCPP_WARN_THROTTLE(
+                        get_logger(), *get_clock(), 5000,
+                        "Skipping IMU optimization interval %.3f s outside (0, %.3f] s",
+                        dt, imuMaxTimeGap);
+                    invalidImuInterval = true;
+                }
                 lastImuT_opt = imuTime;
                 imuQueOpt.pop_front();
             }
             else
                 break;
+        }
+        if (invalidImuInterval)
+        {
+            resetParams();
+            return;
         }
         // add imu factor to graph
         const gtsam::PreintegratedImuMeasurements& preint_imu = dynamic_cast<const gtsam::PreintegratedImuMeasurements&>(*imuIntegratorOpt_);
@@ -466,10 +485,12 @@ public:
             {
                 sensor_msgs::msg::Imu *thisImu = &imuQueImu[i];
                 double imuTime = stamp2Sec(thisImu->header.stamp);
-                double dt = (lastImuQT < 0) ? (1.0 / 500.0) :(imuTime - lastImuQT);
-
-                imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
-                                                        gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
+                double dt = (lastImuQT < 0) ? 0.0 :(imuTime - lastImuQT);
+                if (dt > 0.0 && dt <= imuMaxTimeGap)
+                {
+                    imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
+                                                            gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
+                }
                 lastImuQT = imuTime;
             }
         }
@@ -511,8 +532,23 @@ public:
             return;
 
         double imuTime = stamp2Sec(thisImu.header.stamp);
-        double dt = (lastImuT_imu < 0) ? (1.0 / 500.0) : (imuTime - lastImuT_imu);
+        double dt = (lastImuT_imu < 0) ? 0.0 : (imuTime - lastImuT_imu);
         lastImuT_imu = imuTime;
+
+        if (dt <= 0.0 || dt > imuMaxTimeGap)
+        {
+            if (dt > 0.0)
+            {
+                RCLCPP_WARN_THROTTLE(
+                    get_logger(), *get_clock(), 5000,
+                    "Skipping IMU odometry interval %.3f s outside (0, %.3f] s",
+                    dt, imuMaxTimeGap);
+            }
+            // Do not predict through an unmeasured interval.  The next valid
+            // sample resumes from the latest LiDAR-corrected state.
+            imuIntegratorImu_->resetIntegrationAndSetBias(prevBiasOdom);
+            return;
+        }
 
         // integrate this single imu message
         imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu.linear_acceleration.x, thisImu.linear_acceleration.y, thisImu.linear_acceleration.z),

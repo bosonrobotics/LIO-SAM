@@ -1,7 +1,7 @@
 # LIO-SAM Tuning Guide
 
 This document covers tuning for LIO-SAM with:
-- **IMU:** ZED2i (BMI055 MEMS) at 400 Hz
+- **IMU:** ZED2i (BMI055 MEMS), configured target 400 Hz
 - **LiDAR:** LSLidar C32 at 10 Hz
 - **GPS:** RTK (optional, currently disabled)
 
@@ -31,10 +31,10 @@ the IMU and LiDAR disagree (always the case to some degree due to vibration,
 bias drift, timing), the optimizer resolves the conflict by computing large
 velocities — eventually hitting the 30 m/s threshold and resetting.
 
-### ZED2i IMU rate
+### ZED2i IMU rate and continuity
 
-The ZED2i IMU (BMI055) runs internally at 400 Hz. The ZED ROS2 wrapper was
-throttling it to 100 Hz due to `sensors_image_sync: true`. This was fixed by:
+The ZED2i IMU (BMI055) runs internally at 400 Hz. The intended wrapper
+configuration is:
 
 ```yaml
 # jetson/params/common.yaml
@@ -43,10 +43,16 @@ sensors:
     sensors_pub_rate: 400.      # was: 200   — use hardware maximum
 ```
 
-LIO-SAM hardcodes a fallback dt of `1/500 s`. At 100 Hz the actual dt is
-`0.01 s` (5× difference for the first integration step). At 400 Hz it is
-`0.0025 s`, which is much closer to the fallback and gives 40 IMU samples
-per LiDAR scan instead of 10.
+Do not assume this configuration is effective merely because it is in YAML.
+The 2026-09-07 incident bag measured 152.4 Hz and a worst header gap of
+171.5 ms. That is an unhealthy live source condition even though the YAML
+requests 400 Hz. Diagnose and reduce ZED/vision load until the live stream is
+continuous before mapping.
+
+This vehicle fork does not integrate the first IMU sample using a synthetic
+time step. It also rejects an IMU interval outside `(0, imuMaxTimeGap]` and
+the input gate drops any LiDAR scan that spans such a gap. The active mapping
+profile sets `imuMaxTimeGap: 0.05` seconds.
 
 ### Extrinsic calibration (top LiDAR mount)
 
@@ -100,11 +106,13 @@ imuGyrBiasN: 0.0002
 
 ### Background: "Large velocity" after extended real-time mapping
 
-The system runs fine at startup but triggers "Large velocity, reset IMU-preintegration!"
-after ~5 minutes. This is **not** a thermal or noise issue — confirmed by the fact that
-replaying the same bag at low rate works without errors.
+An IMU-preintegration velocity reset is a downstream divergence safeguard, not
+proof of vehicle speed or of a loop-closure problem. Establish the event order
+from a diagnostic bag before changing loop closure or GPS parameters. In the
+2026-09-07 incident bag, the first mapping pose jump preceded the first reset,
+and neither GPS nor an external loop-closure topic was active.
 
-Two failure paths must be prevented:
+Loop closure is one independent failure path that must be constrained:
 
 1. A false ICP closure can add a discontinuous pose constraint. The optimizer
    then reports an artificial high velocity and the IMU preintegration resets.
