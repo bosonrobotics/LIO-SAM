@@ -314,7 +314,7 @@ public:
         get_parameter("mappingMaxCorrectionDistance", mappingMaxCorrectionDistance);
         declare_parameter("mappingMaxCorrectionRotation", 0.35);
         get_parameter("mappingMaxCorrectionRotation", mappingMaxCorrectionRotation);
-        declare_parameter("mappingMaxTranslationSpeed", 1.2);
+        declare_parameter("mappingMaxTranslationSpeed", 1.6);
         get_parameter("mappingMaxTranslationSpeed", mappingMaxTranslationSpeed);
         declare_parameter("mappingMaxTranslationSlack", 0.3);
         get_parameter("mappingMaxTranslationSlack", mappingMaxTranslationSlack);
