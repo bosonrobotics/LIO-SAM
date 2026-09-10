@@ -151,9 +151,6 @@ public:
     Eigen::Affine3f transPointAssociateToMap;
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
-    Eigen::Affine3f lastAcceptedMappingPose = Eigen::Affine3f::Identity();
-    double lastAcceptedMappingTime = -1.0;
-
     std::unique_ptr<tf2_ros::TransformBroadcaster> br;
 
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("lio_sam_mapOptimization", options)
@@ -352,19 +349,11 @@ public:
 
             downsampleCurrentScan();
 
-            // A local registration result is only useful when it remains
-            // consistent with the IMU prediction.  Never add a rejected
-            // correction to the factor graph: one bad keyframe otherwise
-            // makes subsequent IMU preintegration resets inevitable.
-            if (!scan2MapOptimization())
-                return;
+            scan2MapOptimization();
 
             saveKeyFramesAndFactor();
 
             correctPoses();
-
-            lastAcceptedMappingPose = trans2Affine3f(transformTobeMapped);
-            lastAcceptedMappingTime = timeLaserInfoCur;
 
             publishOdometry();
 
@@ -632,25 +621,10 @@ public:
         // transform from world origin to corrected pose
         Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
 
-        // A distance candidate is already close in the current estimate.
-        // Gate the *actual current-pose displacement*, not the raw ICP
-        // translation, because rotation about the map origin also moves the
-        // pose.  This rejects a numerically converged but physically false
-        // loop closure before it can create a discontinuous IMU correction.
-        const float correctionDistance =
-            (tCorrect.translation() - tWrong.translation()).norm();
-        const float correctionRotation = Eigen::AngleAxisf(correctionLidarFrame.rotation()).angle();
-        if (correctionDistance > loopClosureMaxCorrectionDistance ||
-            correctionRotation > loopClosureMaxCorrectionRotation)
-        {
-            RCLCPP_WARN(
-                get_logger(),
-                "Rejecting loop closure: pose jump %.2f m, %.2f rad exceeds limits %.2f m, %.2f rad",
-                correctionDistance, correctionRotation,
-                loopClosureMaxCorrectionDistance, loopClosureMaxCorrectionRotation);
-            return;
-        }
-
+        // The candidate passed the standard spatial, temporal, ICP-convergence
+        // and fitness checks above. Use the optimizer's accepted constraint;
+        // do not add a second arbitrary correction-size gate here, because a
+        // valid accumulated-drift correction can be larger than a fixed bound.
         pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
         gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
         gtsam::Pose3 poseTo = pclPointTogtsamPose3(copy_cloudKeyPoses6D->points[loopKeyPre]);
@@ -1344,14 +1318,13 @@ public:
         return false; // keep optimizing
     }
 
-    bool scan2MapOptimization()
+    void scan2MapOptimization()
     {
         if (cloudKeyPoses3D->points.empty())
-            return true;
+            return;
 
         if (laserCloudCornerLastDSNum > edgeFeatureMinValidNum && laserCloudSurfLastDSNum > surfFeatureMinValidNum)
         {
-            const Eigen::Affine3f initialGuess = trans2Affine3f(transformTobeMapped);
             kdtreeCornerFromMap->setInputCloud(laserCloudCornerFromMapDS);
             kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
 
@@ -1370,67 +1343,9 @@ public:
             }
 
             transformUpdate();
-
-            const Eigen::Affine3f acceptedPose = trans2Affine3f(transformTobeMapped);
-            const Eigen::Affine3f correction = initialGuess.inverse() * acceptedPose;
-            const float correctionDistance = correction.translation().norm();
-            const float correctionRotation = Eigen::AngleAxisf(correction.rotation()).angle();
-            if (correctionDistance > mappingMaxCorrectionDistance ||
-                correctionRotation > mappingMaxCorrectionRotation)
-            {
-                float x, y, z, roll, pitch, yaw;
-                pcl::getTranslationAndEulerAngles(
-                    initialGuess, x, y, z, roll, pitch, yaw);
-                transformTobeMapped[0] = roll;
-                transformTobeMapped[1] = pitch;
-                transformTobeMapped[2] = yaw;
-                transformTobeMapped[3] = x;
-                transformTobeMapped[4] = y;
-                transformTobeMapped[5] = z;
-                RCLCPP_WARN_THROTTLE(
-                    get_logger(), *get_clock(), 5000,
-                    "Rejected scan-to-map correction: %.2f m, %.1f deg "
-                    "(limits %.2f m, %.1f deg)",
-                    correctionDistance, pcl::rad2deg(correctionRotation),
-                    mappingMaxCorrectionDistance,
-                    pcl::rad2deg(mappingMaxCorrectionRotation));
-                return false;
-            }
-
-            if (lastAcceptedMappingTime > 0.0)
-            {
-                const double elapsed = std::max(0.0, timeLaserInfoCur - lastAcceptedMappingTime);
-                const Eigen::Affine3f motion = lastAcceptedMappingPose.inverse() * acceptedPose;
-                const float motionDistance = motion.translation().norm();
-                const float motionRotation = Eigen::AngleAxisf(motion.rotation()).angle();
-                const float maxDistance = mappingMaxTranslationSlack +
-                    mappingMaxTranslationSpeed * elapsed;
-                const float maxRotation = mappingMaxRotationSlack +
-                    mappingMaxRotationSpeed * elapsed;
-                if (motionDistance > maxDistance || motionRotation > maxRotation)
-                {
-                    float x, y, z, roll, pitch, yaw;
-                    pcl::getTranslationAndEulerAngles(
-                        initialGuess, x, y, z, roll, pitch, yaw);
-                    transformTobeMapped[0] = roll;
-                    transformTobeMapped[1] = pitch;
-                    transformTobeMapped[2] = yaw;
-                    transformTobeMapped[3] = x;
-                    transformTobeMapped[4] = y;
-                    transformTobeMapped[5] = z;
-                    RCLCPP_WARN_THROTTLE(
-                        get_logger(), *get_clock(), 5000,
-                        "Rejected scan-to-map pose jump: %.2f m in %.2f s, %.1f deg "
-                        "(limits %.2f m, %.1f deg)",
-                        motionDistance, elapsed, pcl::rad2deg(motionRotation),
-                        maxDistance, pcl::rad2deg(maxRotation));
-                    return false;
-                }
-            }
-            return true;
         } else {
             RCLCPP_WARN(get_logger(), "Not enough features! Only %d edge and %d planar features available.", laserCloudCornerLastDSNum, laserCloudSurfLastDSNum);
-            return false;
+            return;
         }
     }
 

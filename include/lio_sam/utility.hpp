@@ -141,16 +141,6 @@ public:
     float surroundingKeyframeDensity;
     float surroundingKeyframeSearchRadius;
 
-    // Reject a scan-to-map result that is implausibly far from its IMU-based
-    // prediction.  This is an acceptance gate, not a motion constraint: a
-    // rejected scan never enters the factor graph or becomes a keyframe.
-    float mappingMaxCorrectionDistance;
-    float mappingMaxCorrectionRotation;
-    float mappingMaxTranslationSpeed;
-    float mappingMaxTranslationSlack;
-    float mappingMaxRotationSpeed;
-    float mappingMaxRotationSlack;
-
     // Loop closure
     bool  publishTF;
 
@@ -161,8 +151,6 @@ public:
     float historyKeyframeSearchTimeDiff;
     int   historyKeyframeSearchNum;
     float historyKeyframeFitnessScore;
-    float loopClosureMaxCorrectionDistance;
-    float loopClosureMaxCorrectionRotation;
     int   loopClosureExtraISAMUpdates;
 
     // global map visualization radius
@@ -253,9 +241,9 @@ public:
         declare_parameter("imuRPYWeight", 0.01);
         get_parameter("imuRPYWeight", imuRPYWeight);
         // A missing IMU interval must not be integrated as though the motion
-        // between its endpoints were measured.  The vehicle launch profile
-        // uses 50 ms, which admits normal scheduling jitter at the ZED rate.
-        declare_parameter("imuMaxTimeGap", 0.05);
+        // between its endpoints were measured.  One LiDAR scan (100 ms)
+        // tolerates ordinary scheduler jitter without hiding a real outage.
+        declare_parameter("imuMaxTimeGap", 0.10);
         get_parameter("imuMaxTimeGap", imuMaxTimeGap);
 
         double ida[] = { 1.0,  0.0,  0.0,
@@ -310,19 +298,6 @@ public:
         get_parameter("surroundingKeyframeDensity", surroundingKeyframeDensity);
         declare_parameter("surroundingKeyframeSearchRadius", 50.0);
         get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
-        declare_parameter("mappingMaxCorrectionDistance", 1.5);
-        get_parameter("mappingMaxCorrectionDistance", mappingMaxCorrectionDistance);
-        declare_parameter("mappingMaxCorrectionRotation", 0.35);
-        get_parameter("mappingMaxCorrectionRotation", mappingMaxCorrectionRotation);
-        declare_parameter("mappingMaxTranslationSpeed", 1.6);
-        get_parameter("mappingMaxTranslationSpeed", mappingMaxTranslationSpeed);
-        declare_parameter("mappingMaxTranslationSlack", 0.3);
-        get_parameter("mappingMaxTranslationSlack", mappingMaxTranslationSlack);
-        declare_parameter("mappingMaxRotationSpeed", 0.7);
-        get_parameter("mappingMaxRotationSpeed", mappingMaxRotationSpeed);
-        declare_parameter("mappingMaxRotationSlack", 0.1);
-        get_parameter("mappingMaxRotationSlack", mappingMaxRotationSlack);
-
         declare_parameter("publishTF", true);
         get_parameter("publishTF", publishTF);
 
@@ -340,10 +315,6 @@ public:
         get_parameter("historyKeyframeSearchNum", historyKeyframeSearchNum);
         declare_parameter("historyKeyframeFitnessScore", 0.3);
         get_parameter("historyKeyframeFitnessScore", historyKeyframeFitnessScore);
-        declare_parameter("loopClosureMaxCorrectionDistance", 10.0);
-        get_parameter("loopClosureMaxCorrectionDistance", loopClosureMaxCorrectionDistance);
-        declare_parameter("loopClosureMaxCorrectionRotation", 0.35);
-        get_parameter("loopClosureMaxCorrectionRotation", loopClosureMaxCorrectionRotation);
         declare_parameter("loopClosureExtraISAMUpdates", 0);
         get_parameter("loopClosureExtraISAMUpdates", loopClosureExtraISAMUpdates);
 

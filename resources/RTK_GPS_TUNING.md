@@ -52,7 +52,7 @@ continuous before mapping.
 This vehicle fork does not integrate the first IMU sample using a synthetic
 time step. It also rejects an IMU interval outside `(0, imuMaxTimeGap]` and
 the input gate drops any LiDAR scan that spans such a gap. The active mapping
-profile sets `imuMaxTimeGap: 0.05` seconds.
+profile sets `imuMaxTimeGap: 0.10` seconds.
 
 ### Extrinsic calibration (top LiDAR mount)
 
@@ -150,8 +150,6 @@ loopClosureFrequency:                    1.0   # do NOT increase
 historyKeyframeSearchRadius:             20.0
 surroundingkeyframeAddingDistThreshold:  2.0
 historyKeyframeSearchNum:                15
-loopClosureMaxCorrectionDistance:        2.0
-loopClosureMaxCorrectionRotation:        0.35
 loopClosureExtraISAMUpdates:             0
 ```
 
